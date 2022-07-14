@@ -6,7 +6,14 @@ library(tidyverse)
 library(janitor)
 library(dplyr, warn = F)
 library(tidyr)
-
+library(rvest)
+library(stringr)
+library(stringi)
+library(jsonlite)
+library(RODBC)
+library(DBI)
+library(sqldf)
+library(odbc)
 
 # creates a function that wrangles the data in a way where all of the sections are listed.
 tidy_data <- function(x) { x %>% 
@@ -86,33 +93,63 @@ estimates_df[cols.num] <- sapply(estimates_df[cols.num], as.numeric)
 estimates_df <- estimates_df %>%
   na.omit() %>%
   filter(section != "Annuals")
+
 # exploratory analysis
 estimates_df %>%
-  select(Item, Quantity) %>%
-  group_by(summarise( sum = sum(Quantity)))
-# get all of the distinct names to rename all of them
-estimates_df %>%
-   distinct(section) %>%
+  group_by(Item) %>%
+  summarize(total = sum(Quantity),
+            avg_price = mean(Price)) 
+# i need to acquire a list of names, so I can put the plants in their respective groups
+# i need to use rvest to scrape the webpage from an online dataset
+# html link
+cactus_web <- read_html("http://www.cactus-mall.com/names.html")
+# read the table and put it into a datframe
+cactus_df <- as.data.frame(html_table(cactus_web, header = T)[[4]])
+#capitlize the firs tletter of each string? not exactly what I wanted
+cactus_df$New_Names<-sub("(.)", "\\U\\1",cactus_df$`Common name`,perl=TRUE)
+# extract column of just the new sstrings
+cactus_names <- cactus_df$New_Names
+# create a pattern for the cactus_names
+# uppercase for all first letters
+cactus_names <- stri_trans_totitle(cactus_names)
+pattern <- paste(cactus_names, collapse = "|")
+  group_by(Item)%>%
+  summarize(avg_price = max(Price)) %>%
+  select(Item, avg_price) %>% 
   as.data.frame()
 
-estimates_df %>% filter(section == "Shrubs/Accents/Groundcovers")
+
+
+# getting the list of all the vines from internet
+# need javascript but there is a workaround to get the vines table
+# Inspect > Network
+json_data <- jsonlite::fromJSON("https://api.bugwood.org/rest/api/subject/.json?fmt=datatable&include=count&cat=51&systemid=2&draw=2&columns%5B0%5D%5Bdata%5D=0&columns%5B0%5D%5Bsearchable%5D=false&columns%5B0%5D%5Borderable%5D=false&columns%5B0%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B1%5D%5Bdata%5D=1&columns%5B1%5D%5Bsearchable%5D=true&columns%5B1%5D%5Borderable%5D=true&columns%5B1%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B2%5D%5Bdata%5D=2&columns%5B2%5D%5Bsearchable%5D=true&columns%5B2%5D%5Borderable%5D=true&columns%5B2%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B3%5D%5Bdata%5D=3&columns%5B3%5D%5Bsearchable%5D=false&columns%5B3%5D%5Borderable%5D=true&columns%5B3%5D%5Bsearch%5D%5Bvalue%5D=&order%5B0%5D%5Bcolumn%5D=1&order%5B0%5D%5Bdir%5D=asc&start=163&length=126&search%5Bvalue%5D=&_=1657572710039")
+vine_table <- as.data.frame(json_data$data)
+vine_names <- vine_table$V2 %>% 
+  stri_trans_totitle()
+vine_pattern <- paste(vine_names, collapse = "|")
 # tidying up the data set
 estimates_df <- estimates_df %>%
-  # changing the values in grasses
-  mutate(section = ifelse(grepl("Sod", estimates_df$Item) | 
+  rename(Type= section)
+
+estimates_df <- estimates_df %>%
+  mutate(Type = ifelse(grepl("Sod", estimates_df$Item) | 
                             grepl("Bermuda", estimates_df$Item) | 
                             grepl("Bermua", estimates_df$Item) |
                             grepl("Turf", estimates_df$Item)
-                          , "Turf", section),
-         section = ifelse(grepl("Screened", Item) | grepl("Minus", Item), "Decomposed Granite", section),
-         section = ifelse(grepl("Lantana", Item), "Groundcovers", section)) %>%
-         
-  filter(section != "Vegetable / Herb Garden" & section != "Irrigation" & section != "Pitchers Mound") 
-
-#rename all of the sections
-
-estimates_df <- estimates_df %>%
-  mutate(section = recode(section,
+                          , "Turf", Type),
+         Type = ifelse(grepl("seed", Item) | grepl("Seed", Item), "Seed", Type ),
+         Type = ifelse(grepl("Rip Rap", Item), "Rip Rap", Type),
+         Type = ifelse(grepl("Screened", Item) | grepl("Minus", Item), "Decomposed Granite", Type),
+         Type = ifelse(grepl("Palm", Item), "Palms", Type),
+         Type = ifelse(grepl("Trees", Item) | grepl('24" Box', Item) | grepl('36" Box', Item) |grepl('48" Box', Item) | grepl('60" Box', Item), "Trees", Type),
+         Type = ifelse(grepl("Grass", Item), "Shrubs", Type),
+         Type = ifelse(grepl("Agave", Item) | grepl("Aloe", Item), "Cacti/Succulents", Type),
+         Type = ifelse(str_detect(Item, vine_pattern),"Vines", Type),
+         Type = ifelse(grepl("Bougainvillea", Item) | grepl("Vine", Item), "Vines", Type),
+         Type = ifelse(str_detect(Item, pattern)| grepl("Cactus", Item)| grepl("Mexican Fence Post", Item) , "Cacti/Succulents", Type)) %>%
+  filter(Type != "Vegetable / Herb Garden" & Type != "Irrigation" & Type != "Pitchers Mound") %>%
+  mutate(Type = recode(Type,
                           `Ground Covers` = "Groundcovers",
                           Groundcover = "Groundcovers",
                           GrounCovers = "Groundcovers",
@@ -137,7 +174,7 @@ estimates_df <- estimates_df %>%
                           `Cacti / Succulents` = "Cacti",
                           `Cacti/ Accents` = "Cacti/Accents",
                           Cactus = "Cacti",
-                          `Cacti/Succulents` = "Cacti",
+                        
                           DG = "Decomposed Granite",
                           `Decorative Rock` = "Decomposed Granite",
                           `Entry Way DG` = "Decomposed Granite",
@@ -169,10 +206,10 @@ estimates_df <- estimates_df %>%
                           `Turf (SOD)` = "Turf",
                           `Temp DG` = "Decomposed Granite",
                           `Synthetic Turf` = "Artificial Turf",
-                          Succulents = "Cacti",
+                          Succulents = "Cacti/Succulents",
                           `Stabilized DG` = "Decomposed Granite",
                           `Header` = "Curb",
-                          `Trees and Palms` = "Trees/Palms",
+                          `Trees and Palms` = "Trees",
                           `Small Shrubs` = "Shrubs",
                           `Small Trees` = "Trees",
                           Sod = "Turf",
@@ -210,16 +247,77 @@ estimates_df <- estimates_df %>%
                           `Accents/Ornamental Trees` = "Accents/Trees",
                            `TRUE`= "Turf",
                           `Succulent Garden` = "Cacti",
-                          `Shrubs /  Groundcovers` = "Shrubs/Groundcovers",
-                          `Medium Shrubs` = "Medium Shrubs",
+                          `Shrubs /  Groundcovers` = "Shrubs",
+                          `Medium Shrubs` = "Shrubs",
                           `Inert Groundcovers`= "Groundcovers",
                           `FALSE` = "Seed",
                           Track = "Decomposed Granite",
                           `Groundcovers/ Mass Planters` = "Groundcovers",
-                          `Gorilla Snot` = "Dust Control"))
+                          `Gorilla Snot` = "Dust Control",
+                          `Accents/Cacti` = "Cacti/Accents",
+                          `Trees/Palms` = "Trees"))
+estimates_df <- estimates_df %>%
+  mutate(Type = recode(Type,
+                          `Decomposed Granite/Rip Rap` = "Rip Rap",
+                          `Decomposed Granite/Boulders` = "Boulders",
+                          `Shrubs/Accents/Cacti` = "Cacti/Succulents",
+                          `Accents/Vines` = "Shrubs",
+                          `Shrubs/Accents/Groundcovers` = "Shrubs",
+                          `Cacti/Accents` = "Shrubs",
+                          `Shrubs/Accents` = "Shrubs",
+                          `Accents/Cacti/Succulents` = "Shrubs",
+                          `Accents/Trees` = "Shrubs",
+                          `Shrubs/Vines` = "Shrubs",
+                          `Accents/Groundcovers` = "Shrubs",
+                          `Shrubs/Grasses/Accents` = "Shrubs",
+                          `Accents/Grasses` = "Shrubs",
+                          `Groundcovers/Vines` = "Shrubs",
+                          `Accents/Shrubs/Cacti` = "Shrubs",
+                          `Shrubs/Groundcovers` = "Shrubs",
+                           Cacti = "Shrubs",
+                       Grasses = "Shrubs"))
 
 
 
+# exploratory analysis
+estimates_df %>%
+group_by(Item) %>%
+  summarize(total = sum(Quantity))
+
+estimates_df %>%
+  filter(Type == "Cacti")
+  
+  estimates_df %>%
+    select(Type) %>%
+    distinct()
+    
+
+# take off (Caliper) at the end of every single row
+estimates_df$Item <-  sub("\\s*\\(.*?\\)$", "", estimates_df$Item)
+
+# I want to separate it by section
+
+list_dfs <- split(estimates_df, estimates_df$Type)
+for(i in 1:length(names(list_dfs))){
+  assign(paste(names(list_dfs[i]),".df", sep = ""), as.data.frame(list_dfs[i]))
+}
+
+# connecting to sql
+my_connection <- dbConnect(drv = odbc::odbc(),
+                         Driver = "SQL Server",
+                         server = "calientelandscape.database.windows.net",
+                         database = "Estimates",
+                         uid = "alexmz44",
+                         pwd = "Alexm0307!")
+
+
+for(i in 1:length(list_dfs)){
+dbWriteTable(conn = my_connection,
+             name = paste(names(list_dfs)[i]),
+             value = list_dfs[[i]],
+             row.names = F)
+}
+list_dfs[1]
 
 
 
