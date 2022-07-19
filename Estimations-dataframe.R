@@ -321,3 +321,96 @@ list_dfs[1]
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#########################################################################################################################################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+# create a function that automatically gives you the prices of that specific plant this will be used 
+# in a shiny app that I create in the future
+price <- function(i) {
+  setwd("C:/Users/alexa/OneDrive/Documents/Projects with Data Science/Caliente-Landscape-Estimates/ESTIMATIONS FOR ALEX")
+  j <- as.data.frame(tidy_data(read_excel(i, col_names = F)))
+  j[,1] <-  sub("\\s*\\(.*?\\)$", "", j[,1])
+  jpattern <- paste(j[,1], collapse = "|")
+  k <- estimates_df %>% 
+    mutate(Item = ifelse(str_detect(estimates_df[,1],jpattern),estimates_df$Item, NA))%>%
+    filter(!is.na(Item)) 
+  k.num <- names(k[,c(2:4)])
+  k <- sapply(k[k.num], is.numeric)
+  k <- k %>% group_by(Item) %>% slice(which.max(Price))
+  orders <- j$section
+ k[order(match(j$Type, unique(orders))),]  
+  }
+price(list.files()[2])
+
+
+tidy_data(read_excel(list.files()[1], col_names  = F))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# test it
+
+j <- as.data.frame(tidy_data(read_excel(list.files()[1], col_names = F)))
+j[,1] <-  sub("\\s*\\(.*?\\)$", "", j[,1])
+jpattern <- paste(j[,1], collapse = "|")
+k <- estimates_df %>% 
+  mutate(Item = ifelse(str_detect(estimates_df[,1],jpattern),estimates_df$Item, NA))%>%
+  filter(!is.na(Item)) 
+k.num <- names(k[,c(2:4)])
+k[k.num] <- sapply(k[k.num], as.numeric)
+k <- k %>% group_by(Item) %>% slice(which.max(Price))
+orders <- unique(j$section)
+k[order(match(k$Type, unique(orders))),]  %>% as.data.frame()
+
+unique(orders)
+k
