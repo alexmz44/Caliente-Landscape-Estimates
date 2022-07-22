@@ -113,10 +113,7 @@ cactus_names <- cactus_df$New_Names
 # uppercase for all first letters
 cactus_names <- stri_trans_totitle(cactus_names)
 pattern <- paste(cactus_names, collapse = "|")
-  group_by(Item)%>%
-  summarize(avg_price = max(Price)) %>%
-  select(Item, avg_price) %>% 
-  as.data.frame()
+ 
 
 
 
@@ -275,7 +272,9 @@ estimates_df <- estimates_df %>%
                           `Accents/Shrubs/Cacti` = "Shrubs",
                           `Shrubs/Groundcovers` = "Shrubs",
                            Cacti = "Shrubs",
-                       Grasses = "Shrubs"))
+                       Grasses = "Shrubs",
+                       DG = "Decomposed Granite"
+                       ))
 
 
 
@@ -348,7 +347,6 @@ list_dfs[1]
 
 
 
-
 #########################################################################################################################################################################################################
 
 
@@ -363,54 +361,25 @@ list_dfs[1]
 
 
 
-# create a function that automatically gives you the prices of that specific plant this will be used 
+# create a function that automatically gives you the prices of that specific plants and this will be used 
 # in a shiny app that I create in the future
 price <- function(i) {
   setwd("C:/Users/alexa/OneDrive/Documents/Projects with Data Science/Caliente-Landscape-Estimates/ESTIMATIONS FOR ALEX")
+  # read in the excel file and run it through the tidy function created beforehand
   j <- as.data.frame(tidy_data(read_excel(i, col_names = F)))
   j[,1] <-  sub("\\s*\\(.*?\\)$", "", j[,1])
   jpattern <- paste(j[,1], collapse = "|")
   k <- estimates_df %>% 
     mutate(Item = ifelse(str_detect(estimates_df[,1],jpattern),estimates_df$Item, NA))%>%
-    filter(!is.na(Item)) 
+    filter(!is.na(Item)) %>%
+    select(-Type)
   k.num <- names(k[,c(2:4)])
-  k <- sapply(k[k.num], is.numeric)
+  k[k.num] <- sapply(k[k.num], as.numeric)
   k <- k %>% group_by(Item) %>% slice(which.max(Price))
-  orders <- j$section
- k[order(match(j$Type, unique(orders))),]  
-  }
-price(list.files()[2])
+  k[order(match(k$Item, j$Item)),]%>% 
+    as.data.frame()
+}
 
+price("PCC Health & Education Center ESTIMATE .xlsx")
+j
 
-tidy_data(read_excel(list.files()[1], col_names  = F))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# test it
-
-j <- as.data.frame(tidy_data(read_excel(list.files()[1], col_names = F)))
-j[,1] <-  sub("\\s*\\(.*?\\)$", "", j[,1])
-jpattern <- paste(j[,1], collapse = "|")
-k <- estimates_df %>% 
-  mutate(Item = ifelse(str_detect(estimates_df[,1],jpattern),estimates_df$Item, NA))%>%
-  filter(!is.na(Item)) 
-k.num <- names(k[,c(2:4)])
-k[k.num] <- sapply(k[k.num], as.numeric)
-k <- k %>% group_by(Item) %>% slice(which.max(Price))
-orders <- unique(j$section)
-k[order(match(k$Type, unique(orders))),]  %>% as.data.frame()
-
-unique(orders)
-k
